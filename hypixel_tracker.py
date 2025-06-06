@@ -5,6 +5,7 @@ import sqlite3
 import time
 import os
 import requests
+import re
 from dotenv import load_dotenv
 from skyblock_constants import SKILL_DATA, BESTIARY_THRESHOLDS, BESTIARY_FAMILIES
 # NOTE: You must have skyblock_constants.py and collections.json in the same directory.
@@ -33,6 +34,8 @@ def calculate_level(skill_name, xp):
     """Calculates skill level based on its name and total XP."""
     thresholds = SKILL_DATA.get(skill_name, SKILL_DATA["standard"])
     max_level = len(thresholds)
+    if not thresholds or xp is None:
+    	return 0
     if xp >= thresholds[-1]: return max_level
     level = 0
     for i, threshold in enumerate(thresholds):
@@ -43,7 +46,7 @@ def calculate_level(skill_name, xp):
 def calculate_tier(collection_name, amount):
     """Calculates collection tier based on its name and amount collected."""
     thresholds = COLLECTION_THRESHOLDS.get(collection_name.upper())
-    if not thresholds: return 0
+    if not thresholds or amount is None: return 0
     max_tier = len(thresholds)
     if amount >= thresholds[-1]: return max_tier
     tier = 0
@@ -104,18 +107,17 @@ def parse_and_insert_data(cursor, data, snapshot_timestamp):
     for member_uuid, member_data in data.get('members', {}).items():
         if member_uuid != PLAYER_UUID: continue
         print(f"\nProcessing member: {member_uuid}")
-        player_data = member_data.get('player_data', {})
-        player_stats_data = member_data.get('player_stats', {})
-        death_count = player_data.get('death_count', 0)
-        raw_kills = player_stats_data.get('kills', 0)
-        kill_count = sum(raw_kills.values()) if isinstance(raw_kills, dict) else raw_kills
         purse_amount = member_data.get('currencies', {}).get('coin_purse', 0)
+        death_count = member_data.get('death_count', 0)
         
+        raw_total_kills = member_data.get('player_stats', {}).get('kills', 0)
+        total_kill_count = sum(raw_total_kills.values()) if isinstance(raw_total_kills, dict) else raw_total_kills
+
         cursor.execute('INSERT OR IGNORE INTO profile_snapshots VALUES (?, ?, ?, ?, ?, ?, ?, ?)', 
-                       (profile_id, member_uuid, snapshot_timestamp, data.get('cute_name', 'N/A'), purse_amount, death_count, kill_count, bank_balance))
+                       (profile_id, member_uuid, snapshot_timestamp, data.get('cute_name', 'N/A'), purse_amount, death_count, total_kill_count, bank_balance))
         print(f"  - Added entry to profile_snapshots.")
         
-        experience_data = player_data.get('experience', {})
+        experience_data = member_data.get('experience', {})
         if experience_data:
             skills = {k.replace('SKILL_', '').lower(): v for k, v in experience_data.items()}
             for skill_name, xp in skills.items():
@@ -139,10 +141,29 @@ def parse_and_insert_data(cursor, data, snapshot_timestamp):
 
         bestiary_data = member_data.get('bestiary', {})
         if bestiary_data:
-            mob_kills = bestiary_data.get('kills', {})
-            for mob_id, kill_count in mob_kills.items():
-                cursor.execute('INSERT OR IGNORE INTO bestiary_snapshots VALUES (NULL, ?, ?, ?, ?, ?)', (member_uuid, profile_id, snapshot_timestamp, mob_id, kill_count))
-            print(f"  - Processed {len(mob_kills)} bestiary entries.")
+            api_mob_kills = bestiary_data.get('kills', {})
+            aggregated_kills = {}
+            
+            for api_mob_id, kills in api_mob_kills.items():
+                try:
+                    current_kills = int(kills or 0)
+                    
+                    # Normalize the API mob ID by removing trailing _<numbers>
+                    # This correctly groups 'arachne_300' and 'zombie_1' into 'arachne' and 'zombie'
+                    base_mob_id = re.sub(r'_\d+$', '', api_mob_id)
+                    
+                    # Aggregate kills under the normalized base ID
+                    aggregated_kills[base_mob_id] = aggregated_kills.get(base_mob_id, 0) + current_kills
+                except (ValueError, TypeError):
+                    print(f"  - Warning: Skipping bestiary entry with non-integer kill count. ID: {api_mob_id}, Value: {kills}")
+                    continue
+
+            for base_mob_id, total_kills in aggregated_kills.items():
+                # Store the normalized base_mob_id in the database
+                cursor.execute('INSERT OR IGNORE INTO bestiary_snapshots VALUES (NULL, ?, ?, ?, ?, ?)', 
+                               (member_uuid, profile_id, snapshot_timestamp, base_mob_id, total_kills))
+            print(f"  - Aggregated and processed {len(aggregated_kills)} bestiary entries.")
+
 
 def main():
     """Main function to run the script."""
@@ -161,8 +182,6 @@ def main():
         parse_and_insert_data(cursor, profile_data, snapshot_timestamp)
         conn.commit()
         print("\nAll data has been successfully committed to the database.")
-    except sqlite3.Error as e:
-        print(f"Database error: {e}")
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
     finally:

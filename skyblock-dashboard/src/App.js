@@ -46,7 +46,7 @@ const TimeRangeSelector = ({ onSelect, activeRange, ranges = ['today', '7d', '30
     </div>
 );
 
-const MultiSelectFilter = ({ items, selectedItems, onSelectionChange }) => {
+const MultiSelectFilter = ({ items, selectedItems, onSelectionChange, formatName }) => {
     return (
         <div className="flex flex-wrap gap-2 mb-4">
             {items.map(item => (
@@ -59,7 +59,7 @@ const MultiSelectFilter = ({ items, selectedItems, onSelectionChange }) => {
                             : 'bg-gray-700/50 text-gray-300 hover:bg-gray-600/50'
                     }`}
                 >
-                    {item.charAt(0).toUpperCase() + item.slice(1)}
+                    {formatName(item)}
                 </button>
             ))}
         </div>
@@ -99,7 +99,6 @@ function LatestStats() {
 
     const totalMoney = useMemo(() => {
         if (!stats) return '...';
-        // Now correctly sums purse and the stored bank balance
         const combined = (stats.purse || 0) + (stats.bank_balance || 0);
         return Math.round(combined).toLocaleString();
     }, [stats]);
@@ -173,11 +172,13 @@ function ProgressTable({ title, apiEndpoint }) {
 }
 
 function HistoricalChart({ title, apiEndpoint }) {
-    const [data, setData] = useState({});
     const [loading, setLoading] = useState(true);
     const [timeRange, setTimeRange] = useState('7d');
     const [allItems, setAllItems] = useState([]);
     const [selectedItems, setSelectedItems] = useState([]);
+    const [chartData, setChartData] = useState([]);
+
+    const formatName = (name) => (NAME_MAP[name] || name).replace(/_/g, ' ').replace(/:/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
 
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -205,7 +206,7 @@ function HistoricalChart({ title, apiEndpoint }) {
                     reformattedData[date][key] = point.value;
                 });
             }
-            setData(Object.values(reformattedData).sort((a, b) => new Date(a.date) - new Date(b.date)));
+            setChartData(Object.values(reformattedData).sort((a, b) => new Date(a.date) - new Date(b.date)));
         } catch (error) {
             console.error(`Failed to fetch ${title} history:`, error);
         } finally {
@@ -228,14 +229,14 @@ function HistoricalChart({ title, apiEndpoint }) {
     return (
         <Card title={title}>
             <div className="flex justify-between items-start">
-                <MultiSelectFilter items={allItems} selectedItems={selectedItems} onSelectionChange={handleFilterChange} />
+                <MultiSelectFilter items={allItems} selectedItems={selectedItems} onSelectionChange={handleFilterChange} formatName={formatName} />
                 <TimeRangeSelector onSelect={setTimeRange} activeRange={timeRange} ranges={['7d', '30d', 'all']} />
             </div>
             <div className="flex-grow relative h-[400px]">
                 {loading && <LoadingSpinner />}
                 {!loading && (
                     <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={data} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+                        <LineChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
                             <CartesianGrid strokeDasharray="3 3" stroke="#4a5568" />
                             <XAxis dataKey="date" tick={{ fill: '#a0aec0' }} tickFormatter={(tick) => format(new Date(tick), 'MMM d')} />
                             <YAxis tick={{ fill: '#a0aec0' }} tickFormatter={(tick) => tick >= 1000 ? `${(tick/1000).toFixed(0)}k` : tick} />
@@ -243,11 +244,19 @@ function HistoricalChart({ title, apiEndpoint }) {
                                 contentStyle={{ backgroundColor: '#2d3748', border: '1px solid #4a5568', borderRadius: '0.5rem' }}
                                 labelStyle={{ color: '#e2e8f0', fontWeight: 'bold' }}
                                 itemStyle={{ fontWeight: 'bold' }}
-                                formatter={(value, name) => [Math.round(value).toLocaleString(), name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())]}
+                                formatter={(value, name) => [Math.round(value).toLocaleString(), formatName(name)]}
                             />
-                            <Legend wrapperStyle={{ color: '#e2e8f0' }} />
+                            <Legend wrapperStyle={{ color: '#e2e8f0' }} formatter={formatName} />
                             {selectedItems.map((key, index) => (
-                                <Line key={key} type="monotone" dataKey={key} name={NAME_MAP[key] || key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())} stroke={COLORS[index % COLORS.length]} dot={false} strokeWidth={2} />
+                                <Line 
+                                  key={key} 
+                                  type="monotone" 
+                                  dataKey={key} 
+                                  name={key}
+                                  stroke={COLORS[index % COLORS.length]} 
+                                  dot={chartData.length === 1} 
+                                  activeDot={{ r: 8 }}
+                                  strokeWidth={2} />
                             ))}
                         </LineChart>
                     </ResponsiveContainer>
@@ -268,7 +277,7 @@ export default function App() {
         try {
             const res = await fetch(`${API_BASE_URL}/api/trigger_collect`, { method: 'POST' });
             if (res.ok) {
-                setSnapshotInfo('Collection process started! Refreshing...');
+                setSnapshotInfo('Collection process started! Refreshing in 5s...');
                 setTimeout(() => window.location.reload(), 5000); 
             } else {
                 setSnapshotInfo('Failed to start collection.');
@@ -325,6 +334,14 @@ export default function App() {
                 
                 <div className="lg:col-span-2">
                     <HistoricalChart title="Skill XP Progression" apiEndpoint="skills" />
+                </div>
+
+                <div className="lg:col-span-2">
+                    <HistoricalChart title="Collection History" apiEndpoint="collections" />
+                </div>
+
+                <div className="lg:col-span-2">
+                    <HistoricalChart title="Bestiary History" apiEndpoint="bestiary" />
                 </div>
                 
                  <div className="lg:col-span-2">
