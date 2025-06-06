@@ -1,0 +1,3 @@
+# crontab
+0 3 * * * python /app/hypixel_tracker.py >> /var/log/cron.log 2>&1
+# An empty line is required at the end of this file for cron to work correctly
