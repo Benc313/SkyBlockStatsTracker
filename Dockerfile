@@ -1,35 +1,24 @@
-# Dockerfile
-
 # Use an official Python runtime as a parent image
 FROM python:3.9-slim
 
 # Set the working directory in the container
 WORKDIR /app
 
-# Install system dependencies needed for cron
-RUN apt-get update && apt-get -y install cron
-
-# Copy the file that lists the python dependencies
+# Copy the requirements file into the container at /app
 COPY requirements.txt .
 
 # Install any needed packages specified in requirements.txt
+# Gunicorn is included in your requirements.txt and will be used to run the app.
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of your application's code into the container
+# Copy the rest of the application code into the container at /app
 COPY . .
 
-# Copy the cron job file to the cron directory
-COPY crontab /etc/cron.d/skyblock-cron
-# Give execution rights to the cron job
-RUN chmod 0644 /etc/cron.d/skyblock-cron
-# Apply the cron job
-RUN crontab /etc/cron.d/skyblock-cron
-
-# Copy the supervisord configuration file
-COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
-
-# Expose the port the app runs on
+# Make port 5000 available to the world outside this container
 EXPOSE 5000
 
-# Run supervisord. This will start both cron and gunicorn (for Flask)
-CMD ["/usr/local/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+# Define environment variable for the API key (to be passed during 'docker run')
+ENV HYPIXEL_API_KEY=""
+
+# Command to run the application using Gunicorn
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"]
