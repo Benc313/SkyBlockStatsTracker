@@ -1,0 +1,34 @@
+# Gitignore for Skyblock Tracker Project
+
+# Python related
+*.pyc
+__pycache__/
+.venv/
+venv/
+*.sqlite3
+*.db
+!skyblock_stats.db # Keep the database file if it's the only one of its kind and you want it tracked.
+                   # However, for a persistent Docker volume, it's generally best to ignore it.
+                   # If you want to commit an empty .db file to ensure structure, use `git add -f skyblock_stats.db` once.
+.env
+*.env
+# Node.js / React related
+node_modules/
+build/
+.env.local
+.env*.local
+.parcel-cache/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Playwright related
+.cache/playwright/ # Playwright browser binaries downloaded by `playwright install`
+
+# Docker related
+*.log
+docker-compose.override.yml # If you introduce docker-compose later for local overrides
+
+# Operating System specific
+.DS_Store
+Thumbs.db
