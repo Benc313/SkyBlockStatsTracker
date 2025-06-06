@@ -35,7 +35,7 @@ def calculate_level(skill_name, xp):
     thresholds = SKILL_DATA.get(skill_name, SKILL_DATA["standard"])
     max_level = len(thresholds)
     if not thresholds or xp is None:
-    	return 0
+        return 0
     if xp >= thresholds[-1]: return max_level
     level = 0
     for i, threshold in enumerate(thresholds):
